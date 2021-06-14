@@ -1,11 +1,12 @@
 import messaging
-import os
 import morphemic
 import time
 import logging
 import signal
-import json
 
+# Libraries required for training and prediction
+import os
+import json
 import pandas as pd
 import numpy as np
 import itertools
@@ -33,8 +34,7 @@ import ast
 import pickle
 from time import sleep
 
-metrics=set()
-id="prophet"
+
 
 METHOD = os.environ.get("METHOD", "prophet")
 START_TOPIC = f"start_forecasting.{METHOD}"
@@ -46,26 +46,138 @@ AMQ_USER = os.environ.get("AMQ_USER", "admin")
 AMQ_PASSWORD = os.environ.get("AMQ_PASSWORD", "admin")
 
 
+class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListener):
+    id="prophet"
+    metrics=set()
+
+    def __init__(self):
+        self._run =  False
+        self.connector = messaging.morphemic.Connection('aaa','111', host='147.102.17.76', port=61610)
+        #self.model = morphemic.model.Model(self)
+
+    def run(self):
+        logging.debug("setting up")
+        self.connector.set_listener(self.id, self)
+        self.connector.connect()
+        self.connector.topic("start_forecasting.prophet", self.id)
+        self.connector.topic("stop_forecasting.prophet", self.id)
+        self.connector.topic("metrics_to_predict", self.id)
+             
+    def on_start_forecastig_prophet(self):
+        logging.debug("Prophet started phorecasting")
+        #read the model
+        with open('Prophet.pkl', 'rb') as f:
+            model = pickle.load(f)
+            
+            
+        body=json.loads(frame.body)
+        logging.debug(body)
+        
+        timestamp = body['timestamp']
+        epoch_start = body["epoch_start"]
+        prediction_horizon = body["prediction_horizon"]
+        number_of_forward_predictions = body["number_of_forward_predictions"] 
+        sent_metrics = body["metrics"]
+        for metric in sent_metrics:
+            if metric not in metrics:
+                logging.debug("Subscribing to %s " % metric)
+                #self.m.topic(metric,id)
+                metrics.add(metric)
+                
+        logging.debug("THE METRICS")       
+        logging.debug(metrics)
+        #a=prediction_horizon 
+        while(True):
+            for metric in sent_metrics:
+         
+                predictions=predict(model , number_of_forward_predictions)
+                logging.debug(predictions['yhat'].values)
+            
+                logging.debug("SENDING PREDICTION")
+                #a=prediction_horizon 
+                for v in predictions['yhat'].values.tolist():
+                 
+                    self.connector.send_to_topic('intermediate_prediction.prophet.'+metric,               
+                    
+                    {
+                        "metricValue": v,
+                        "level": 3,
+                        "timestamp": int(time()),
+                        "probability": 0.98,
+                        "confidence_interval" : [12,20],
+                        "horizon": 30,
+                        "predictionTime" : int(epoch_start),
+                        "refersTo": "MySQL_12345",
+                        "cloud": "AWS-Dublin",
+                        "provider": "AWS"
+                        
+                        })
+                        
+                    #a=a+prediction_horizon 
+            #duration=time() - epoch_start
+            epoch_start=epoch_start + prediction_horizon
+            sleep(prediction_horizon)
+
+    def on_train(self, frame):
+        logging.debug("Here is the frame")
+        logging.debug(frame)
+        body=frame.body
+        res = ast.literal_eval(body)
+        #logging.debug(res[0])
+        logging.debug("METRICS TO PREDICT") 
+        logging.debug(res[0])
+        
+        for r in res:
+            if r['metric'] not in self.metrics():
+                logging.debug("Subscribing to %s " % r)    
+                self.metrics.add(r['metric'])
+        logging.debug(metrics)
+        
+        
+        logging.debug("20 minutes")
+        
+        model=train("20 minutes")
+        
+        pkl_path = "Prophet.pkl"
+        with open(pkl_path, "wb") as f:
+            pickle.dump(model, f)
+        
+        self.m.send_to_topic("training_models",
+            {
+
+            "metrics": list(metrics),
+
+             "forecasting_method": "Prophet",
+
+            "timestamp": int(time()/1000)
+
+            }   
+        )
+
+    def on_start_forecastig_prophet(self, frame):
+        logging.debug("Stop Forecasting %s" % frame)
+        body=frame.body
+        res = ast.literal_eval(body)
+        #logging.debug(res[0])
+        logging.debug("METRICS TO PREDICT") 
+        logging.debug(res[0])
+        
+        for r in res:
+            if r['metric'] in self.metrics:
+                logging.debug("Un-subscribing from %s " % r)
+                metrics.remove(r['metric'])
+        logging.debug(metrics)
+        logging.debug("STOP FORECASTING")   
+
+    def start(self):
+        logging.debug("Staring Prophet")
+        self.run()
+        self._run = True
+        
 
 
 def train(prediction_horizon):
-    '''
-    filename='demo'
-    
-    dataset= pd.read_csv(filename + ".csv")
-    X= dataset[['time','cpu_usage', 'latency', 'level', 'memory']]
-    y= dataset.iloc[:,5]
-    for i in range(0, len(X['time'])):
-        t=time.strftime('%Y-%m-%dT%H:%M-%S.752Z' , time.gmtime(X['time'][i]))
-        X['time'][i]=datetime.strptime(t, '%Y%m-%d %H:%M:%S')
-    logging.debug(X['time'])
-    #changing the names of the attributes
-    prophet_dataset= pd.DataFrame()
-    prophet_dataset['ds'] = pd.to_datetime(X["time"])
-    prophet_dataset['y']=y
-    #prophet_dataset['ds'] = prophet_dataset['ds'].dt.tz_convert(None)
-    '''
-    
+
     filename='demo'
     
     dataset= pd.read_csv(filename + ".csv")
@@ -166,147 +278,7 @@ def train(prediction_horizon):
                      #mcmc_samples = parameters['mcmc_samples'][0]
                       )
     final_model.fit(train)
-    return final_model
-        
-def predict(model , number_of_forward_predictions):
-    future = model.make_future_dataframe(periods = number_of_forward_predictions , freq='min', include_history = False)
-    forecast= model.predict(future)
-    return forecast
-    
-    
-    
-    
-    
-    
-
-class Listener(messaging.listener.MorphemicListener):
-    
-    def __init__(self, m, topic_name):
-        self.m = m
-        self.m.topic("metrics_to_predict.prophet",id)
-        self.topic_name = topic_name
-
-    
-    def on_message(self, frame):
-
-          
-        logging.debug("Here is the frame")
-        logging.debug(frame)
-        body=frame.body
-        res = ast.literal_eval(body)
-        #logging.debug(res[0])
-        logging.debug("METRICS TO PREDICT") 
-        logging.debug(res[0])
-        
-        for r in res:
-            metrics.add(r['metric'])
-        logging.debug(metrics)
-        
-        
-        logging.debug("20 minutes")
-        
-        model=train("20 minutes")
-        
-        pkl_path = "Prophet.pkl"
-        with open(pkl_path, "wb") as f:
-            pickle.dump(model, f)
-        
-        self.m.send_to_topic("training_models",
-            {
-
-            "metrics": list(metrics),
-
-             "forecasting_method": "Prophet",
-
-            "timestamp": int(time()/1000)
-
-            }   
-        )
-        
-        
-        
-         
-         
-         
-        
-class StartForecastingListener(messaging.listener.MorphemicListener):
-
-    def __init__(self, m1, topic_name):
-        self.m1 = m1
-        self.m1.topic("start_forecasting.prophet",id)
-        self.topic_name = topic_name
-    
-    def on_message(self, frame):
-        logging.debug("START FORECASTING")
-        
-        
-        #read the model
-        with open('Prophet.pkl', 'rb') as f:
-            model = pickle.load(f)
-            
-            
-        body=json.loads(frame.body)
-        logging.debug(body)
-        
-        timestamp = body['timestamp']
-        epoch_start = body["epoch_start"]
-        prediction_horizon = body["prediction_horizon"]
-        number_of_forward_predictions = body["number_of_forward_predictions"] 
-        sent_metrics = body["metrics"]
-        for metric in sent_metrics:
-            if metric not in metrics:
-                logging.debug("Subscribing to %s " % metric)
-                #self.m.topic(metric,id)
-                metrics.add(metric)
-                
-        logging.debug("THE METRICS")       
-        logging.debug(metrics)
-        #a=prediction_horizon 
-        while(True):
-            for metric in sent_metrics:
-         
-                predictions=predict(model , number_of_forward_predictions)
-                logging.debug(predictions['yhat'].values)
-            
-                logging.debug("SENDING PREDICTION")
-                #a=prediction_horizon 
-                e_s= epoch_start + prediction_horizon
-                for v in predictions['yhat'].values.tolist():
-                    timestamp = int(time())
-                    self.m1.send_to_topic('intermediate_prediction.prophet.'+metric,               
-                    
-                    {
-                        "metricValue": v,
-                        "level": 3,
-                        "timestamp": timestamp,
-                        "probability": 0.98,
-                        "confidence_interval" : [12,20],
-                        "horizon": 30,
-                        "predictionTime" : int(e_s),
-                        "refersTo": "MySQL_12345",
-                        "cloud": "AWS-Dublin",
-                        "provider": "AWS"
-                        
-                        })
-                    e_s=e_s + prediction_horizon
-                        
-                    #a=a+prediction_horizon 
-            #duration=time() - epoch_start
-            epoch_start=epoch_start + prediction_horizon
-            sleep(prediction_horizon)
-                
-        
-class StopForecastingListener(messaging.listener.MorphemicListener):
-
-    def __init__(self, m2, topic_name2):
-        self.m2 = m2
-        self.m2.topic("stop_forecasting.prophet",id)
-        self.topic_name2 = topic_name2
-
-    
-    def on_message(self, frame):
-        logging.debug("STOP FORECASTING")      
-        
+    return final_model    
 
 
 def main():
@@ -317,21 +289,6 @@ def main():
     dataset_preprocessor.prepare_csv()
     logging.debug("dataset downloaded")
     '''
-    
-    
-    
-    
-    
-    
-    m = messaging.morphemic.Connection('user','pass', host='host, port=port)
-    m1 = messaging.morphemic.Connection('user','pass', host='host, port=port)
-    m2 = messaging.morphemic.Connection('user','pass', host='host, port=port)
-    
-    
-    m.connect()
-    m1.connect()
-    m2.connect()
-    
     m.set_listener(id,Listener(m,"/topic/metrics_to_predict.prophet"))
     m1.set_listener(id,StartForecastingListener(m1,"/topic/start_forecasting.prophet"))
     m2.set_listener(id,StopForecastingListener(m2,"/topic/stop_forecasting.prophet"))
@@ -339,12 +296,3 @@ def main():
 
     while True:
         pass
-
-
-if __name__ == "__main__":
-    publish_rate = 0
-    all_metrics = {}
-
-    main()
-
-    
