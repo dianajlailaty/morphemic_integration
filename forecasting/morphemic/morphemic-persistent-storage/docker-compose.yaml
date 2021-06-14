@@ -1,0 +1,62 @@
+version: '2'
+
+services:
+  database:
+    build:
+      context: ./database
+    container_name: database
+    restart: always
+    env_file:
+      - "./database/.env"
+    volumes:
+      - "./database/data:/var/lib/influxdb"
+  publisher:
+    image: jdtotow/publisher
+    container_name: publisher
+    restart: always
+    environment:
+      - "ACTIVEMQ_HOST=activemq"
+      #- "APPLICATION_NAME=custom_name"
+  
+  activemq:
+    image: jdtotow/activemq
+    container_name: activemq
+    ports:
+      # mqtt
+      - "1883:1883"
+      # amqp
+      - "5672:5672"
+      # ui
+      - "8161:8161"
+      # stomp
+      - "61613:61613"
+      # ws
+      - "61614:61614"
+      # jms
+      - "61616:61616"
+      # jms prometheus agent
+      - "8080:8080"
+    #volumes: ["activemq-data:/opt/activemq/conf", "activemq-data:/data/activemq", "activemq-data:/var/log/activemq"]
+    environment:
+      ACTIVEMQ_REMOVE_DEFAULT_ACCOUNT: "true"
+      ACTIVEMQ_ADMIN_LOGIN: aaa
+      ACTIVEMQ_ADMIN_PASSWORD: "111"
+      ACTIVEMQ_WRITE_LOGIN: aaa
+      ACTIVEMQ_WRITE_PASSWORD: "111"
+      ACTIVEMQ_READ_LOGIN: aaa
+      ACTIVEMQ_READ_PASSWORD: "111"
+      ACTIVEMQ_JMX_LOGIN: aaa
+      ACTIVEMQ_JMX_PASSWORD: "111"
+      ACTIVEMQ_STATIC_TOPICS: static-topic-1;static-topic-2
+      ACTIVEMQ_STATIC_QUEUES: static-queue-1;static-queue-2
+      ACTIVEMQ_ENABLED_SCHEDULER: "true"
+      ACTIVEMQ_MIN_MEMORY: 512
+      ACTIVEMQ_MAX_MEMORY: 2048
+
+  #prometheus:
+  #  image: prom/prometheus
+  #  ports:
+  #    - 9090:9090
+  #  container_name: prometheus
+  #  volumes:
+  #  - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml

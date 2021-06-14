@@ -1,0 +1,46 @@
+# Gitlab CI/CD script for the Morphemic Preprocessor project
+
+variables:
+  MAVEN_IMAGE: "maven:3.5.2-jdk-8"
+
+  LOCAL_REPO: "127.0.0.1:5000"
+
+  SCHEDULING_ABSTRACTION_LAYER_CLI: "mvn -DskipTests --batch-mode -f scheduling-abstraction-layer/pom.xml"
+
+cache:
+  paths:
+    - maven_repo/
+
+before_script:
+  - echo '=========================================================================='
+  - echo $SCHEDULING_ABSTRACTION_LAYER_CLI
+  - echo '=========================================================================='
+  - mkdir -p $HOME/.m2
+  - echo '<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+    https://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <localRepository>'$CI_PROJECT_DIR'/maven_repo</localRepository>
+    </settings>' > $HOME/.m2/settings.xml
+
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  image: $MAVEN_IMAGE
+  script:
+    - $SCHEDULING_ABSTRACTION_LAYER_CLI clean install
+  artifacts:
+    paths:
+      - /builds/melodic/morphemic-preprocessor/maven_repo/org/activeeon/scheduling-abstraction-layer/
+
+deploy:
+  stage: deploy
+  image: $MAVEN_IMAGE
+  only:
+    - master
+    - morphemic-rc1.5
+  script:
+    - $SCHEDULING_ABSTRACTION_LAYER_CLI deploy
