@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 import itertools
 import matplotlib.pyplot as plt
-import numpy as np
 import plotly.offline as pyoff
 import plotly.graph_objs as go
 from sklearn import preprocessing
@@ -33,8 +32,11 @@ import ast
 import pickle
 from time import sleep
 
-metrics=set()
-id="prophet"
+#metrics = set()
+metrics = {"cpu_usage"}
+id = "prophet"
+probabilities = dict()
+probabilities["cpu_usage"]=0.85
 
 METHOD = os.environ.get("METHOD", "prophet")
 START_TOPIC = f"start_forecasting.{METHOD}"
@@ -48,45 +50,37 @@ AMQ_PASSWORD = os.environ.get("AMQ_PASSWORD", "admin")
 
 
 
-def train(prediction_horizon):
-    '''
+def train(prediction_horizon , metric):
+
+    #loading the dataset
     filename='demo'
-    
     dataset= pd.read_csv(filename + ".csv")
-    X= dataset[['time','cpu_usage', 'latency', 'level', 'memory']]
-    y= dataset.iloc[:,5]
-    for i in range(0, len(X['time'])):
-        t=time.strftime('%Y-%m-%dT%H:%M-%S.752Z' , time.gmtime(X['time'][i]))
-        X['time'][i]=datetime.strptime(t, '%Y%m-%d %H:%M:%S')
-    logging.debug(X['time'])
-    #changing the names of the attributes
+  
+    #changing the names and the format of the attributes
     prophet_dataset= pd.DataFrame()
-    prophet_dataset['ds'] = pd.to_datetime(X["time"])
-    prophet_dataset['y']=y
-    #prophet_dataset['ds'] = prophet_dataset['ds'].dt.tz_convert(None)
-    '''
+    prophet_dataset['ds'] = dataset["time"]
+    logging.debug(prophet_dataset['ds'] )
+    prophet_dataset['y']=dataset[metric]
+    for  i in range (0,len(prophet_dataset['ds'])):
+        prophet_dataset['ds'] [i]= datetime.fromtimestamp(prophet_dataset['ds'] [i])
     
-    filename='demo'
+    logging.debug("THE TRAINING TIMESTAMPS")
+    logging.debug(prophet_dataset['ds'])
     
-    dataset= pd.read_csv(filename + ".csv")
-    X= dataset[['name','time', 'countryCode', 'ipAddress', 'level',
-     'producer']]
-    y= dataset.iloc[:,6]
-    #changing the names of the attributes
-    prophet_dataset= pd.DataFrame()
-    prophet_dataset['ds'] = pd.to_datetime(X["time"])
-    prophet_dataset['y']=y
-    prophet_dataset['ds'] = prophet_dataset['ds'].dt.tz_convert(None)
-    
-    #splitting
+    logging.debug("STARTED TRAINING FOR: "+ metric)
+
+    #splitting to train and test
     test_percentage=0.2
     training_window_size=int(len(prophet_dataset)-(len(prophet_dataset)*test_percentage))
     train=prophet_dataset[:training_window_size]
+    logging.debug("THE TRAINING TIMESTAMPS")
+    logging.debug(train['ds'])
     test=prophet_dataset[training_window_size:]
     
     #hyperparameter tuning and cross validation
-    initial = '30 minutes'
-    period = '15 minutes'
+    #should be generic
+    initial = '10 minutes'
+    period = '5 minutes'
     horizon = prediction_horizon
 
     changepoint_prior_scale  = [0.1,0.2,0.3,0.4,0.5]
@@ -94,27 +88,19 @@ def train(prediction_horizon):
     #growth = ['logistic', 'linear'] 
     changepoint_range = [0.25, 0.5, 0.75]
     seasonality_mode = ["additive","multiplicative"]
-    interval_width = [0.25, 0.5]  
+    interval_width = [0.75,0.8,0.85]  
     
     param_grid = {  #'changepoint_prior_scale' : changepoint_prior_scale,
                 'n_changepoints' : n_changepoints,
                 #'growth': growth, 
                 'changepoint_range' : changepoint_range,
                 #'seasonality_mode' : seasonality_mode,
-                #'interval_width' : interval_width,   
-                #'changepoints': changepoints, 
-                #'yearly_seasonality': yearly_seasonality,
-                #'weekly_seasonality': weekly_seasonality,
-                #'daily_seasonality': daily_seasonality,
-                #'holidays': holidays,
-                #'seasonality_prior_scale': seasonality_prior_scale,
-                #'holidays_prior_scale': holidays_prior_scale,    
+                'interval_width' : interval_width,   
               }
     grid = ParameterGrid(param_grid)
     cnt = 0
     for p in grid:
         cnt = cnt+1
-
     logging.debug(cnt)
     
     all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
@@ -123,7 +109,7 @@ def train(prediction_horizon):
     cutoffss = []
     df_cvs = []
 
-    # Use cross validation to evaluate all parameters
+    #use cross validation to evaluate all parameters
     for params in all_params:
         m = Prophet(**params).fit(train)  # Fit model with given params
         df_cv = cross_validation(m, initial=initial, period = period, horizon = horizon)
@@ -143,9 +129,10 @@ def train(prediction_horizon):
     tuning_results['cutoffs'] = cutoffss
     tuning_results['df_cv'] = df_cvs
     logging.debug(tuning_results)
-    
+    #global prob
     parameters = tuning_results.sort_values(by=['rmse'])
     parameters = parameters.reset_index(drop=True)
+    prob = parameters['interval_width'][0]
     logging.debug(parameters)
     
     #get the final model
@@ -155,7 +142,7 @@ def train(prediction_horizon):
                      n_changepoints =  parameters['n_changepoints'][0],
                      #growth =  parameters['growth'][0],
                      changepoint_range = parameters['changepoint_range'][0],
-                     #interval_width =  parameters['interval_width'][0],  
+                     interval_width =  parameters['interval_width'][0],  
                      #changepoints = parameters['changepoints'][0],
                      #yearly_seasonality = parameters['yearly_seasonality'][0],
                      #weekly_seasonality =  parameters['weekly_seasonality'][0],
@@ -166,11 +153,27 @@ def train(prediction_horizon):
                      #mcmc_samples = parameters['mcmc_samples'][0]
                       )
     final_model.fit(train)
+    probabilities[metric] = prob
     return final_model
+    
+
         
-def predict(model , number_of_forward_predictions):
-    future = model.make_future_dataframe(periods = number_of_forward_predictions , freq='min', include_history = False)
-    forecast= model.predict(future)
+def predict(model , number_of_forward_predictions , prediction_horizon , epoch_start):
+    #freqInMin = int(prediction_horizon)/60
+    #freq = str(freqInMin) + "min"
+    #future = model.make_future_dataframe(periods = number_of_forward_predictions , freq = freq , include_history = False)
+    future = list()
+    for i in range(1, number_of_forward_predictions+1):
+        dateInSec = epoch_start + i*prediction_horizon
+        #logging.debug([dateInSec])
+        date=datetime.fromtimestamp(dateInSec)
+        future.append(date)
+        
+    future = pd.DataFrame(future)
+    future.columns = ['ds']
+    #logging.debug("THIS IS THE FUTURE DATASET")
+    #logging.debug(future)
+    forecast = model.predict(future)
     return forecast
     
     
@@ -196,20 +199,30 @@ class Listener(messaging.listener.MorphemicListener):
         res = ast.literal_eval(body)
         #logging.debug(res[0])
         logging.debug("METRICS TO PREDICT") 
+        '''
+        #getting data from datasetmaker
+        dataset_preprocessor = CSVData(APP_NAME)
+        dataset_preprocessor.prepare_csv()
+        logging.debug("DATASET DOWNLOADED")
+        '''
         logging.debug(res[0])
         
         for r in res:
             metrics.add(r['metric'])
+        for metric in metrics:
+            model=train("3 minutes",metric)
+            pkl_path = "prophet_"+metric+".pkl"
+            with open(pkl_path, "wb") as f:
+                pickle.dump(model, f)
+            logging.debug("TRAINING ENDED FOR: " + metric)
+        
+        #logging.debug("20 minutes")
+        
+        #model=train("20 minutes")
+        
+        
+        
         logging.debug(metrics)
-        
-        
-        logging.debug("20 minutes")
-        
-        model=train("20 minutes")
-        
-        pkl_path = "Prophet.pkl"
-        with open(pkl_path, "wb") as f:
-            pickle.dump(model, f)
         
         self.m.send_to_topic("training_models",
             {
@@ -218,8 +231,7 @@ class Listener(messaging.listener.MorphemicListener):
 
              "forecasting_method": "Prophet",
 
-            "timestamp": int(time()/1000)
-
+            "timestamp": int(time())
             }   
         )
         
@@ -240,10 +252,7 @@ class StartForecastingListener(messaging.listener.MorphemicListener):
         logging.debug("START FORECASTING")
         
         
-        #read the model
-        with open('Prophet.pkl', 'rb') as f:
-            model = pickle.load(f)
-            
+        
             
         body=json.loads(frame.body)
         logging.debug(body)
@@ -264,34 +273,45 @@ class StartForecastingListener(messaging.listener.MorphemicListener):
         #a=prediction_horizon 
         while(True):
             for metric in sent_metrics:
-         
-                predictions=predict(model , number_of_forward_predictions)
-                logging.debug(predictions['yhat'].values)
-            
-                logging.debug("SENDING PREDICTION")
-                #a=prediction_horizon 
-                e_s= epoch_start + prediction_horizon
-                for v in predictions['yhat'].values.tolist():
-                    timestamp = int(time())
-                    self.m1.send_to_topic('intermediate_prediction.prophet.'+metric,               
+                if metric in metrics:
+                    #load the model
+                    with open("prophet_"+metric+".pkl", 'rb') as f:
+                        model = pickle.load(f)
+                
+             
+                    predictions=predict(model , number_of_forward_predictions , prediction_horizon , epoch_start)
+                    yhats = predictions['yhat'].values.tolist()
+                    yhat_lowers = predictions['yhat_lower'].values.tolist()
+                    yhat_uppers = predictions['yhat_upper'].values.tolist()
                     
-                    {
-                        "metricValue": v,
-                        "level": 3,
-                        "timestamp": timestamp,
-                        "probability": 0.98,
-                        "confidence_interval" : [12,20],
-                        "horizon": 30,
-                        "predictionTime" : int(e_s),
-                        "refersTo": "MySQL_12345",
-                        "cloud": "AWS-Dublin",
-                        "provider": "AWS"
+                    prediction_time= epoch_start + prediction_horizon
+                    timestamp = int(time())
+                
+                    logging.debug("SENDING PREDICTION")
+
+                    
+                    for k in range(0,len(predictions['yhat'].values.tolist())):
+                        yhat = yhats[k]
+                        yhat_lower = yhat_lowers[k]
+                        yhat_upper = yhat_uppers[k]
                         
-                        })
-                    e_s=e_s + prediction_horizon
+                        self.m1.send_to_topic('intermediate_prediction.prophet.'+metric,               
                         
-                    #a=a+prediction_horizon 
-            #duration=time() - epoch_start
+                        {
+                            "metricValue": yhat,
+                            "level": 3,
+                            "timestamp": timestamp,
+                            "probability": probabilities[metric],
+                            "confidence_interval" : [yhat_lower,yhat_upper],
+                            "horizon": prediction_horizon,
+                            "predictionTime" : int(prediction_time),
+                            "refersTo": "todo",
+                            "cloud": "todo",
+                            "provider": "todo"  
+                            })
+                            
+                        prediction_time=prediction_time + prediction_horizon
+
             epoch_start=epoch_start + prediction_horizon
             sleep(prediction_horizon)
                 
@@ -305,27 +325,27 @@ class StopForecastingListener(messaging.listener.MorphemicListener):
 
     
     def on_message(self, frame):
-        logging.debug("STOP FORECASTING")      
+        logging.debug("STOP FORECASTING")
+        
+        body=json.loads(frame.body)
+        logging.debug("METRICS TO STOP PREDICTION") 
+        logging.debug(body["metrics"])
+        metrics.add("memory")
+        for metric in body["metrics"]:
+            if metric in metrics:
+                logging.debug("Un-subscribing from: " + metric )
+                metrics.remove(metric)
+        logging.debug(metrics)
+        logging.debug("STOP FORECASTING") 
         
 
 
 def main():
     logging.getLogger().setLevel(logging.DEBUG)
     
-    '''
-    dataset_preprocessor = CSVData(APP_NAME)
-    dataset_preprocessor.prepare_csv()
-    logging.debug("dataset downloaded")
-    '''
-    
-    
-    
-    
-    
-    
-    m = messaging.morphemic.Connection('user','pass', host='host, port=port)
-    m1 = messaging.morphemic.Connection('user','pass', host='host, port=port)
-    m2 = messaging.morphemic.Connection('user','pass', host='host, port=port)
+    m = messaging.morphemic.Connection('aaa','111', host='147.102.17.76', port=61610)
+    m1 = messaging.morphemic.Connection('aaa','111', host='147.102.17.76', port=61610)
+    m2 = messaging.morphemic.Connection('aaa','111', host='147.102.17.76', port=61610)
     
     
     m.connect()
