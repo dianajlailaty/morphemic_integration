@@ -32,14 +32,16 @@ class MorphemicListener(ConnectionListener):
         logging.debug("Unknown message %s %s ",headers, res)
         pass
 
-    def on_message(self, headers, body):
-
+    def on_message(self, frame):
+        headers = frame.headers
+        body = frame.body
         logging.debug("Headers %s",headers)
         logging.debug("        %s",body)
 
         try:
             res = json.loads(body)
             func_name='on_%s' % slugify(headers.get('destination').replace('/topic/',''), separator='_',)
+            logging.debug("func_name %s", func_name)
             if hasattr(self,func_name):
                 func = getattr(self,  func_name)
                 func(res)
