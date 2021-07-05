@@ -100,6 +100,7 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
         logging.debug(ACTIVEMQ_PASSWORD)
         logging.debug(ACTIVEMQ_HOSTNAME)
         logging.debug(ACTIVEMQ_PORT)
+        sleep(90)
         self.connector = messaging.morphemic.Connection(ACTIVEMQ_USER,ACTIVEMQ_PASSWORD, host=ACTIVEMQ_HOSTNAME, port=ACTIVEMQ_PORT)
         #self.connector = messaging.morphemic.Connection('morphemic','morphemic', host='147.102.17.76', port=61616)
         #self.model = morphemic.model.Model(self)
