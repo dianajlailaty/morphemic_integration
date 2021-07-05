@@ -6,7 +6,7 @@ from filelock import FileLock
 
 
 class CSVData(object):
-    def __init__(self, name, start_collection='10m'):
+    def __init__(self, name, start_collection=None):
         self.name = name
         self.config = {
             "hostname": os.environ.get("INFLUXDB_HOSTNAME"),
