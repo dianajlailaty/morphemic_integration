@@ -13,17 +13,16 @@ import json
 import pickle
 import ast
 from time import sleep
+from dataset_maker import CSVData
 
 
 
-METHOD = os.environ.get("METHOD", "prophet")
-START_TOPIC = f"start_forecasting.{METHOD}"
-STOP_TOPIC = f"stop_forecasting.{METHOD}"
-PRED_TOPIC_PREF = f"intermediate_prediction.{METHOD}"
-PREDICTION_CYCLE = 1  # minutes
-APP_NAME = os.environ.get("APP_NAME", "demo")
-AMQ_USER = os.environ.get("AMQ_USER", "admin")
-AMQ_PASSWORD = os.environ.get("AMQ_PASSWORD", "admin")
+APP_NAME = os.environ.get("APP_NAME")
+ACTIVEMQ_USER = os.environ.get("ACTIVEMQ_USER")
+ACTIVEMQ_PASSWORD = os.environ.get("ACTIVEMQ_PASSWORD")
+ACTIVEMQ_HOSTNAME = os.environ.get("ACTIVEMQ_HOSTNAME")
+ACTIVEMQ_PORT = os.environ.get("ACTIVEMQ_PORT")
+
 predictionTimes = dict()
 models = dict()
 flags = {'cpu_usage': 0 , 'latency': 0 , 'memory': 0 ,  'response_time': 0}
@@ -97,7 +96,12 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
 
     def __init__(self):
         self._run =  False
-        self.connector = messaging.morphemic.Connection('aaa','111', host='147.102.17.76', port=61610)
+        logging.debug(ACTIVEMQ_USER)
+        logging.debug(ACTIVEMQ_PASSWORD)
+        logging.debug(ACTIVEMQ_HOSTNAME)
+        logging.debug(ACTIVEMQ_PORT)
+        self.connector = messaging.morphemic.Connection(ACTIVEMQ_USER,ACTIVEMQ_PASSWORD, host=ACTIVEMQ_HOSTNAME, port=ACTIVEMQ_PORT)
+        #self.connector = messaging.morphemic.Connection('morphemic','morphemic', host='147.102.17.76', port=61616)
         #self.model = morphemic.model.Model(self)
 
     def run(self):
@@ -114,8 +118,6 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
         self.run()
         pass
 
-
-
     def on_start_forecasting_prophet(self, body):
         logging.debug("Prophet Start Forecasting the following metrics :") 
         sent_metrics = body["metrics"]
@@ -129,12 +131,10 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
     def on_metrics_to_predict_prophet(self, body):
         logging.debug("check the trained model for :") 
         logging.debug(body) 
-        '''
         #getting data from datasetmaker
         dataset_preprocessor = CSVData(APP_NAME)
         dataset_preprocessor.prepare_csv()
         logging.debug("DATASET DOWNLOADED")
-        '''
         
         for r in body:
             metric = r['metric']

@@ -5,22 +5,27 @@ services:
     build:
       context: ./database
     container_name: database
+    network_mode: bridge
     restart: always
-    env_file:
-      - "./database/.env"
     volumes:
       - "./database/data:/var/lib/influxdb"
+    ports: 
+      - 8086:8086
+    env_file:
+      - variables.env
   publisher:
     image: jdtotow/publisher
     container_name: publisher
     restart: always
-    environment:
-      - "ACTIVEMQ_HOST=activemq"
-      #- "APPLICATION_NAME=custom_name"
+    env_file:
+      - variables.env
   
   activemq:
     image: jdtotow/activemq
     container_name: activemq
+    network_mode: bridge
+    env_file:
+      - variables.env
     ports:
       # mqtt
       - "1883:1883"
@@ -37,21 +42,17 @@ services:
       # jms prometheus agent
       - "8080:8080"
     #volumes: ["activemq-data:/opt/activemq/conf", "activemq-data:/data/activemq", "activemq-data:/var/log/activemq"]
-    environment:
-      ACTIVEMQ_REMOVE_DEFAULT_ACCOUNT: "true"
-      ACTIVEMQ_ADMIN_LOGIN: aaa
-      ACTIVEMQ_ADMIN_PASSWORD: "111"
-      ACTIVEMQ_WRITE_LOGIN: aaa
-      ACTIVEMQ_WRITE_PASSWORD: "111"
-      ACTIVEMQ_READ_LOGIN: aaa
-      ACTIVEMQ_READ_PASSWORD: "111"
-      ACTIVEMQ_JMX_LOGIN: aaa
-      ACTIVEMQ_JMX_PASSWORD: "111"
-      ACTIVEMQ_STATIC_TOPICS: static-topic-1;static-topic-2
-      ACTIVEMQ_STATIC_QUEUES: static-queue-1;static-queue-2
-      ACTIVEMQ_ENABLED_SCHEDULER: "true"
-      ACTIVEMQ_MIN_MEMORY: 512
-      ACTIVEMQ_MAX_MEMORY: 2048
+    env_file:
+      - variables.env
+
+  forecaster:
+    image: activeeon/morphemic
+    network_mode: bridge
+    container_name: forecaster
+    volumes:
+      - "/Users/imenbizid/Documents/morphemic_integration:/tmp/Notebooks"
+    env_file:
+      - variables.env
 
   #prometheus:
   #  image: prom/prometheus
