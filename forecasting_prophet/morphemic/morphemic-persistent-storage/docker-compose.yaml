@@ -53,6 +53,8 @@ services:
       - "/Users/imenbizid/Documents/morphemic_integration:/tmp/Notebooks"
     env_file:
       - variables.env
+    links:
+      - forecatser
 
   #prometheus:
   #  image: prom/prometheus
