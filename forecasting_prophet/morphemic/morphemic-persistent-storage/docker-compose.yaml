@@ -49,8 +49,6 @@ services:
     image: activeeon/morphemic
     network_mode: bridge
     container_name: forecaster
-    volumes:
-      - "/Users/imenbizid/Documents/morphemic_integration:/tmp/Notebooks"
     env_file:
       - variables.env
     links:
