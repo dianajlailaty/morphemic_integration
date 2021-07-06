@@ -54,7 +54,7 @@ services:
     env_file:
       - variables.env
     links:
-      - forecatser
+      - activemq
 
   #prometheus:
   #  image: prom/prometheus
