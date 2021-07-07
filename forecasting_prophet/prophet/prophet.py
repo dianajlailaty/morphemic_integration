@@ -29,7 +29,7 @@ import os
 
 def train(metric):
     #loading the dataset
-    filename='demo'
+    filename=os.environ.get("APP_NAME")
     dataset= pd.read_csv(filename + ".csv")
   
     #changing the names and the format of the attributes
