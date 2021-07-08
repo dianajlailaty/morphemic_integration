@@ -14,7 +14,7 @@ import pickle
 import ast
 from time import sleep
 from dataset_maker import CSVData
-
+from multiprocessing import Process
 
 
 APP_NAME = os.environ.get("APP_NAME")
@@ -25,7 +25,9 @@ ACTIVEMQ_PORT = os.environ.get("ACTIVEMQ_PORT")
 
 predictionTimes = dict()
 models = dict()
-flags = {'cpu_usage': 0 , 'latency': 0 , 'memory': 0 ,  'response_time': 0}
+flags = {'avgResponseTime':0 , 'memory': 0}
+metrics_processes=dict()
+metrics = set()
 
 def worker(self,body,metric):
     
@@ -37,7 +39,7 @@ def worker(self,body,metric):
     epoch_start= body["epoch_start"]
     predictionTimes[metric] = epoch_start
 
-    if  os.path.isfile('prophet_'+metric+".pkl"):  
+    if  os.path.isfile('models/prophet_'+metric+".pkl"):  
         logging.debug("Loading the trained model for metric: " + metric)
 
     while(True):
@@ -45,7 +47,7 @@ def worker(self,body,metric):
             epoch_start = predictionTimes[metric]
             flags[metric] = 1
             #load the model
-        with open("prophet_"+metric+".pkl", 'rb') as f:
+        with open("models/prophet_"+metric+".pkl", 'rb') as f:
             models[metric] = pickle.load(f)
         
         predictions=prophet.predict(models[metric] , number_of_forward_predictions , prediction_horizon , epoch_start)
@@ -100,7 +102,7 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
         logging.debug(ACTIVEMQ_PASSWORD)
         logging.debug(ACTIVEMQ_HOSTNAME)
         logging.debug(ACTIVEMQ_PORT)
-        sleep(90)
+        #sleep(90)
         logging.debug("slept 90 seconds")
         self.connector = messaging.morphemic.Connection(ACTIVEMQ_USER,ACTIVEMQ_PASSWORD, host=ACTIVEMQ_HOSTNAME, port=ACTIVEMQ_PORT)
         #self.connector = messaging.morphemic.Connection('morphemic','morphemic', host='147.102.17.76', port=61616)
@@ -125,10 +127,12 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
         sent_metrics = body["metrics"]
         logging.debug(sent_metrics)
         for metric in sent_metrics:
-            if metric not in self.metrics:
-                self.metrics.add(metric)
-            thread = threading.Thread(target=worker , args=(self, body, metric,))
-            thread.start()
+            if metric not in metrics:
+                metrics.add(metric)
+            #thread = threading.Thread(target=worker , args=(self, body, metric,))
+            if  metric not in metrics_processes:
+                metrics_processes[metric] = Process(target=worker, args=(self, body, metric,))
+                metrics_processes[metric] .start()
 
     def on_metrics_to_predict_prophet(self, body):
         logging.debug("check the trained model for :") 
@@ -141,19 +145,19 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
         for r in body:
             metric = r['metric']
         #for metric in metrics:
-            if not os.path.isfile('prophet_'+metric+".pkl"): 
+            if not os.path.isfile('models/prophet_'+metric+".pkl"): 
                 logging.debug("Training a Prophet model for metric : " + metric)
                 model=prophet.train(metric)
-                pkl_path = "prophet_"+metric+".pkl"
+                pkl_path = "models/prophet_"+metric+".pkl"
                 with open(pkl_path, "wb") as f:
                     pickle.dump(model, f)
                 #flags[metric]=1
-            self.metrics.add(metric)
+            metrics.add(metric)
         
         self.connector .send_to_topic("training_models",
             {
 
-            "metrics": list(self.metrics),
+            "metrics": list(metrics),
 
             "forecasting_method": "Prophet",
 
@@ -164,11 +168,14 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
     def on_stop_forecasting_prophet(self, body):
         logging.debug("Prophet Stop Forecasting the following metrics :")
         logging.debug(body["metrics"])
-        metrics.add("memory")
+        #metrics.add("memory")
         for metric in body["metrics"]:
             if metric in metrics:
                 logging.debug("Remove from the list of metrics this metric: " + metric )
-                self.metrics.remove(metric)
+                metrics_processes[metric] .terminate()
+                metrics.remove(metric)
+                metrics_processes.pop(metric)
+        logging.debug(metrics)
 
     def start(self):
         logging.debug("Staring Prophet Forecaster")

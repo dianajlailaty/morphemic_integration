@@ -25,11 +25,11 @@ import ast
 import pickle
 import json
 import os
-
+import math
 
 def train(metric):
     #loading the dataset
-    filename='demo'
+    filename=os.environ.get("APP_NAME")
     dataset= pd.read_csv(filename + ".csv")
   
     #changing the names and the format of the attributes
@@ -37,8 +37,16 @@ def train(metric):
     prophet_dataset['ds'] = dataset["time"]
     logging.debug(prophet_dataset['ds'] )
     prophet_dataset['y']=dataset[metric]
+    prophet_dataset['y'] = pd.to_numeric(prophet_dataset['y'], errors='coerce')
     for  i in range (0,len(prophet_dataset['ds'])):
         prophet_dataset['ds'] [i]= datetime.fromtimestamp(prophet_dataset['ds'] [i])
+
+    for i in range(0,len(prophet_dataset['y'])):
+        if math.isnan(prophet_dataset['y'][i]):
+           # print("true")
+            prophet_dataset['y'][i] = prophet_dataset['y'].mean()
+
+
     
     #logging.debug("THE TRAINING TIMESTAMPS")
     #logging.debug(prophet_dataset['ds'])

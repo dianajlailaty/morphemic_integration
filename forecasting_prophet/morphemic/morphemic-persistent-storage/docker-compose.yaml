@@ -46,11 +46,14 @@ services:
       - variables.env
 
   forecaster:
+    #image: gitlab.ow2.org:4567/melodic/morphemic-preprocessor/prophet:morphemic-rc1.5
     image: activeeon/morphemic
     network_mode: bridge
     container_name: forecaster
     env_file:
       - variables.env
+    volumes:
+      - /home/diana/Desktop/Prophet/forecasting_prophet:/tmp/Notebooks
     links:
       - activemq
 
