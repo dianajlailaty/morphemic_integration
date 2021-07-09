@@ -36,7 +36,7 @@ from sklearn.model_selection import ParameterGrid
 import statistics
 import math
 
-
+directory_path = "morphemic_project/morphemic_integration/forecasting_gluonts/"
 
 def train(metric):
     #loading the dataset
@@ -136,7 +136,7 @@ def train(metric):
                              )
         forecasts = list(forecast_it)
         tss = list(ts_it)
-        evaluator = Evaluator(quantiles=[0.1, 0.5, 0.9])
+        evaluator = Evaluator(quantiles=[0.1,0.5,0.9])
         agg_metrics, item_metrics = evaluator(iter(tss), iter(forecasts), num_series=len(validation_ds))
         #agg_metrics['num_hidden_dimensions'] = params['num_hidden_dimensions']
         agg_metrics['epochs'] = params['epochs']
@@ -168,15 +168,15 @@ def train(metric):
 
     #probabilities[metric] = prob
     #checking if probabilities file exist
-    prob=80
-    if(os.path.isfile('prob_file.npy')):
-        probs = np.load('prob_file.npy' , allow_pickle='TRUE').item()
+    prob=0.8
+    if(os.path.isfile(directory_path+'prob_file.npy')):
+        probs = np.load(directory_path+'prob_file.npy' , allow_pickle='TRUE').item()
         probs[metric] = prob
     else:
         probs=dict()
         probs[metric] = prob
     #writing probabilities in a file
-    np.save('prob_file.npy', probs) 
+    np.save(directory_path+'prob_file.npy', probs) 
     return predictor1
 
 

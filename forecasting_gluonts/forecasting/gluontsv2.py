@@ -30,6 +30,8 @@ flags = {'avgResponseTime':0 , 'memory': 0}
 metrics_processes=dict()
 metrics = set()
 
+directory_path = "morphemic_project/morphemic_integration/forecasting_gluonts/"
+
 def worker(self,body,metric):
     
     #logging.debug("Forecasting metric: " + metric)
@@ -39,7 +41,7 @@ def worker(self,body,metric):
     epoch_start= body["epoch_start"]
     predictionTimes[metric] = epoch_start
 
-    if  os.path.isfile('models/gluonts_'+metric+".pkl"):  
+    if  os.path.isfile(directory_path+'models/gluonts_'+metric+".pkl"):  
         logging.debug("Loading the trained model for metric: " + metric)
         
     while(True):
@@ -47,9 +49,9 @@ def worker(self,body,metric):
             epoch_start = predictionTimes[metric]
             flags[metric] = 0
         #load the model
-        if os.path.isfile("models/gluonts_"+metric+".pkl"): 
+        if os.path.isfile(directory_path+"models/gluonts_"+metric+".pkl"): 
             sleep(5)
-            with open("models/gluonts_"+metric+".pkl", 'rb') as f:
+            with open(directory_path+"models/gluonts_"+metric+".pkl", 'rb') as f:
                 models[metric] = pickle.load(f)
 
         
@@ -62,7 +64,7 @@ def worker(self,body,metric):
         timestamp = int(time())
         
         #read probabilities file
-        probs = np.load('prob_file.npy' , allow_pickle='TRUE').item()
+        probs = np.load(directory_path+'prob_file.npy' , allow_pickle='TRUE').item()
 
     
         logging.debug("Sending predictions for metric: "+ metric)
@@ -154,11 +156,11 @@ class Gluonts(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
             metric = r['metric']
         #for metric in metrics:
 
-            if not os.path.isfile('models/gluonts_'+metric+".pkl"): 
+            if not os.path.isfile(directory_path+'models/gluonts_'+metric+".pkl"): 
                 logging.debug("Training a Gluonts model for metric : " + metric)
                 model=gluonts.train(metric)
                 flags[metric]=1
-                pkl_path = "models/gluonts_"+metric+".pkl"
+                pkl_path = directory_path+"models/gluonts_"+metric+".pkl"
                 with open(pkl_path, "wb") as f:
                     pickle.dump(model, f)
                 #flags[metric]=1
