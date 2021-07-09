@@ -55,7 +55,7 @@ def worker(self,body,metric):
         yhat_uppers = predictions['yhat_upper'].values.tolist()
         
         prediction_time= epoch_start+ prediction_horizon
-        timestamp = int(time())
+        timestamp = int(time()) # change it to the time of the start_forecasting was sent
         
         #read probabilities file
         probs = np.load('prob_file.npy' , allow_pickle='TRUE').item()
@@ -67,6 +67,7 @@ def worker(self,body,metric):
             yhat_lower = yhat_lowers[k]
             yhat_upper = yhat_uppers[k]
             
+            #wait until epoch_start to send
             self.connector.send_to_topic('intermediate_prediction.prophet.'+metric,               
             
             {
@@ -76,7 +77,7 @@ def worker(self,body,metric):
                 "probability": probs[metric],
                 "confidence_interval" : [yhat_lower,yhat_upper],
                 "horizon": prediction_horizon,
-                "predictionTime" : int(prediction_time),
+                "predictionTime" : int(prediction_time), # 
                 "refersTo": "todo",
                 "cloud": "todo",
                 "provider": "todo"  
