@@ -35,7 +35,6 @@ def train(metric):
     #changing the names and the format of the attributes
     prophet_dataset= pd.DataFrame()
     prophet_dataset['ds'] = dataset["time"]
-    logging.debug(prophet_dataset['ds'] )
     prophet_dataset['y']=dataset[metric]
     prophet_dataset['y'] = pd.to_numeric(prophet_dataset['y'], errors='coerce')
     for  i in range (0,len(prophet_dataset['ds'])):
@@ -46,10 +45,6 @@ def train(metric):
            # print("true")
             prophet_dataset['y'][i] = prophet_dataset['y'].mean()
 
-
-    
-    #logging.debug("THE TRAINING TIMESTAMPS")
-    #logging.debug(prophet_dataset['ds'])
     size = len(prophet_dataset)
     
     logging.debug("STARTED TRAINING FOR: "+ metric)
@@ -58,8 +53,6 @@ def train(metric):
     #test_percentage=0.2
     #training_window_size=int(len(prophet_dataset)-(len(prophet_dataset)*test_percentage))
     train=prophet_dataset[:size]
-    #logging.debug("THE TRAINING TIMESTAMPS")
-    #logging.debug(train['ds'])
     #test=prophet_dataset[training_window_size:]
     
     #hyperparameter tuning and cross validation
@@ -108,7 +101,7 @@ def train(metric):
     cnt = 0
     for p in grid:
         cnt = cnt+1
-    logging.debug(cnt)
+
     
     all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
     rmses = []  # Store the RMSEs for each params here
@@ -135,12 +128,12 @@ def train(metric):
     tuning_results['mae'] = maes
     tuning_results['cutoffs'] = cutoffss
     tuning_results['df_cv'] = df_cvs
-    logging.debug(tuning_results)
+
     #global prob
     parameters = tuning_results.sort_values(by=['rmse'])
     parameters = parameters.reset_index(drop=True)
     prob = parameters['interval_width'][0]
-    logging.debug(parameters)
+
     
     #get the final model
     final_model = Prophet(
@@ -165,30 +158,22 @@ def train(metric):
     if(os.path.isfile('prob_file.npy')):
         probs = np.load('prob_file.npy',allow_pickle='TRUE').item()
         probs[metric] = prob
-        logging.debug("File exists")
+
     else:
         probs=dict()
         probs[metric] = prob
-        logging.debug("File does not exists")
+
     #writing probabilities in a file
     np.save('prob_file.npy', probs) 
-    #logging.debug("file written")
     return final_model
         
 def predict(model , number_of_forward_predictions , prediction_horizon , epoch_start):
-    #freqInMin = int(prediction_horizon)/60
-    ##freq = str(freqInMin) + "min"
-    #future = model.make_future_dataframe(periods = number_of_forward_predictions , freq = freq , include_history = False)
-    #logging.debug("THIS IS THE FUTURE DATASET")
-    #logging.debug(future)
     future = list()
     for i in range(1, number_of_forward_predictions+1):
         dateInSec = epoch_start + i*prediction_horizon
-        #logging.debug([dateInSec])
         date=datetime.fromtimestamp(dateInSec)
         future.append(date)
     future = pd.DataFrame(future)
     future.columns = ['ds']
     forecast = model.predict(future)
-    logging.debug(forecast)
     return forecast

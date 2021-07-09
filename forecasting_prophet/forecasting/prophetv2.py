@@ -31,11 +31,10 @@ metrics = set()
 
 def worker(self,body,metric):
     
-    logging.debug("Forecasting metric: " + metric)
+    #logging.debug("Forecasting metric: " + metric)
     timestamp = body['timestamp']
     prediction_horizon = body["prediction_horizon"]
     number_of_forward_predictions = body["number_of_forward_predictions"]   
-    logging.debug(metric)
     epoch_start= body["epoch_start"]
     predictionTimes[metric] = epoch_start
 
@@ -59,19 +58,16 @@ def worker(self,body,metric):
         timestamp = int(time())
         
         #read probabilities file
-        logging.debug("Loading the trained model probabilities")
         probs = np.load('prob_file.npy' , allow_pickle='TRUE').item()
 
     
-        logging.debug("Sending predictions for metric: "+ metric)
-        logging.debug("Prediction_time: "+ str(prediction_time))
 
         for k in range(0,len(predictions['yhat'].values.tolist())):
             yhat = yhats[k]
             yhat_lower = yhat_lowers[k]
             yhat_upper = yhat_uppers[k]
             
-            self.connector.send_to_topic('intermediate_prediction_prophet_'+metric,               
+            self.connector.send_to_topic('intermediate_prediction.prophet.'+metric,               
             
             {
                 "metricValue": yhat,
@@ -103,7 +99,7 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
         logging.debug(ACTIVEMQ_HOSTNAME)
         logging.debug(ACTIVEMQ_PORT)
         #sleep(90)
-        logging.debug("slept 90 seconds")
+        #logging.debug("slept 90 seconds")
         self.connector = messaging.morphemic.Connection(ACTIVEMQ_USER,ACTIVEMQ_PASSWORD, host=ACTIVEMQ_HOSTNAME, port=ACTIVEMQ_PORT)
         #self.connector = messaging.morphemic.Connection('morphemic','morphemic', host='147.102.17.76', port=61616)
         #self.model = morphemic.model.Model(self)
@@ -112,9 +108,9 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
         logging.debug("setting up")
         self.connector.connect()
         self.connector.set_listener(self.id, self)
-        self.connector.topic("metrics_to_predict_prophet", self.id)
-        self.connector.topic("start_forecasting_prophet", self.id)
-        self.connector.topic("stop_forecasting_prophet", self.id)
+        self.connector.topic("start_forecasting.prophet", self.id)
+        self.connector.topic("stop_forecasting.prophet", self.id)
+        self.connector.topic("metrics_to_predict", self.id)
 
     def reconnect(self):
         print('Reconnecting to ActiveMQ')
@@ -134,11 +130,11 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
                 metrics_processes[metric] = Process(target=worker, args=(self, body, metric,))
                 metrics_processes[metric] .start()
 
-    def on_metrics_to_predict_prophet(self, body):
+    def on_metrics_to_predict(self, body):
         logging.debug("check the trained model for :") 
         logging.debug(body) 
         #getting data from datasetmaker
-        dataset_preprocessor = CSVData(APP_NAME)
+        dataset_preprocessor = CSVData(APP_NAME,start_collection='2h')
         dataset_preprocessor.prepare_csv()
         logging.debug("DATASET DOWNLOADED")
         
@@ -168,10 +164,8 @@ class Prophet(morphemic.handler.ModelHandler,messaging.listener.MorphemicListene
     def on_stop_forecasting_prophet(self, body):
         logging.debug("Prophet Stop Forecasting the following metrics :")
         logging.debug(body["metrics"])
-        #metrics.add("memory")
         for metric in body["metrics"]:
             if metric in metrics:
-                logging.debug("Remove from the list of metrics this metric: " + metric )
                 metrics_processes[metric] .terminate()
                 metrics.remove(metric)
                 metrics_processes.pop(metric)
